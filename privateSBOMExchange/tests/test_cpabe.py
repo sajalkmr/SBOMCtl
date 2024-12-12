@@ -187,5 +187,83 @@ class TestCPABE(unittest.TestCase):
         
         self.assertEqual(large_message, decrypted)
 
+import pytest
+
+class TestCPABEErrorHandling(unittest.TestCase):
+    def setUp(self):
+        self.policy = '"Security" or "Audit"'
+        self.groups = ['Security', 'Audit']
+        self.plaintext = "Test message"
+        self.pk, self.mk = cpabe.cpabe_setup()
+        
+    def test_invalid_key_generation(self):
+        # Test empty groups
+        with pytest.raises(ValueError, match="Groups cannot be empty"):
+            cpabe.cpabe_keygen(self.pk, self.mk, [])
+            
+        # Test None groups
+        with pytest.raises(TypeError, match="Groups cannot be None"):
+            cpabe.cpabe_keygen(self.pk, self.mk, None)
+            
+        # Test invalid group type
+        with pytest.raises(TypeError, match="Groups must be a list"):
+            cpabe.cpabe_keygen(self.pk, self.mk, "Security")
+            
+        # Test invalid masterkey
+        with pytest.raises(ValueError, match="Invalid master key"):
+            cpabe.cpabe_keygen(self.pk, None, self.groups)
+
+    def test_invalid_encryption(self):
+        # Test empty policy
+        with pytest.raises(ValueError, match="Policy cannot be empty"):
+            cpabe.cpabe_encrypt(self.pk, "", self.plaintext.encode())
+            
+        # Test None policy
+        with pytest.raises(TypeError, match="Policy cannot be None"):
+            cpabe.cpabe_encrypt(self.pk, None, self.plaintext.encode())
+            
+        # Test None plaintext
+        with pytest.raises(TypeError, match="Plaintext cannot be None"):
+            cpabe.cpabe_encrypt(self.pk, self.policy, None)
+            
+        # Test non-bytes plaintext
+        with pytest.raises(TypeError, match="Plaintext must be bytes"):
+            cpabe.cpabe_encrypt(self.pk, self.policy, self.plaintext)
+
+    def test_invalid_decryption(self):
+        sk = cpabe.cpabe_keygen(self.pk, self.mk, self.groups)
+        ct = cpabe.cpabe_encrypt(self.pk, self.policy, self.plaintext.encode())
+        
+        # Test None ciphertext
+        with pytest.raises(TypeError, match="Ciphertext cannot be None"):
+            cpabe.cpabe_decrypt(sk, None)
+            
+        # Test invalid ciphertext format
+        with pytest.raises(ValueError, match="Invalid ciphertext format"):
+            cpabe.cpabe_decrypt(sk, b"invalid")
+            
+        # Test None secret key
+        with pytest.raises(TypeError, match="Secret key cannot be None"):
+            cpabe.cpabe_decrypt(None, ct)
+
+    def test_invalid_delegation(self):
+        sk = cpabe.cpabe_keygen(self.pk, self.mk, self.groups)
+        
+        # Test empty subgroups
+        with pytest.raises(ValueError, match="Subgroups cannot be empty"):
+            cpabe.cpabe_delegate(self.pk, sk, [])
+            
+        # Test None subgroups
+        with pytest.raises(TypeError, match="Subgroups cannot be None"):
+            cpabe.cpabe_delegate(self.pk, sk, None)
+            
+        # Test invalid subgroups type
+        with pytest.raises(TypeError, match="Subgroups must be a list"):
+            cpabe.cpabe_delegate(self.pk, sk, "Security")
+            
+        # Test subgroups not subset of original groups
+        with pytest.raises(ValueError, match="Subgroups must be subset of original groups"):
+            cpabe.cpabe_delegate(self.pk, sk, ["InvalidGroup"])
+
 if __name__ == '__main__':
     unittest.main()
