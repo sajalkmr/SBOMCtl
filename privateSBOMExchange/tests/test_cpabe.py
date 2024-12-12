@@ -92,3 +92,100 @@ with open(args.decrypted_file, "w+") as f:
 passed = verify_sameness(sbom_tree, decrypted_tree)
 
 print("full tree sameness verification passed? %s" % str(passed))
+
+import unittest
+import time
+from cpabe import cpabe_setup, cpabe_keygen, cpabe_encrypt, cpabe_decrypt
+
+class TestCPABE(unittest.TestCase):
+    def setUp(self):
+        # Setup CP-ABE environment before each test
+        self.pk, self.mk = cpabe_setup()
+        
+    def test_basic_key_generation(self):
+        """Test key generation with basic attribute set"""
+        attributes = ["role::admin", "department::engineering"]
+        try:
+            sk = cpabe_keygen(self.mk, attributes)
+            self.assertIsNotNone(sk)
+        except Exception as e:
+            self.fail(f"Key generation failed: {str(e)}")
+
+    def test_multiple_attribute_sets(self):
+        """Test key generation with different attribute combinations"""
+        attribute_sets = [
+            ["role::user", "department::hr"],
+            ["role::admin", "department::engineering", "level::senior"],
+            ["role::manager", "department::sales", "region::west"]
+        ]
+        for attrs in attribute_sets:
+            with self.subTest(attributes=attrs):
+                sk = cpabe_keygen(self.mk, attrs)
+                self.assertIsNotNone(sk)
+
+    def test_encryption_decryption(self):
+        """Test basic encryption and decryption"""
+        attributes = ["role::admin", "department::engineering"]
+        sk = cpabe_keygen(self.mk, attributes)
+        message = b"Hello, CP-ABE!"
+        policy = '(role::admin AND department::engineering)'
+        
+        # Test encryption
+        ct = cpabe_encrypt(self.pk, policy, message)
+        self.assertIsNotNone(ct)
+        
+        # Test decryption
+        decrypted = cpabe_decrypt(sk, ct)
+        self.assertEqual(message, decrypted)
+
+    def test_invalid_policy(self):
+        """Test error handling for invalid policies"""
+        attributes = ["role::admin"]
+        sk = cpabe_keygen(self.mk, attributes)
+        message = b"Test message"
+        invalid_policies = [
+            "(invalid::policy)",  # Unknown attribute
+            "AND role::admin",    # Malformed policy
+            ""                    # Empty policy
+        ]
+        
+        for policy in invalid_policies:
+            with self.subTest(policy=policy):
+                with self.assertRaises(Exception):
+                    cpabe_encrypt(self.pk, policy, message)
+
+    def test_insufficient_attributes(self):
+        """Test decryption with insufficient attributes"""
+        sk = cpabe_keygen(self.mk, ["role::user"])
+        message = b"Secret message"
+        policy = '(role::admin AND department::engineering)'
+        
+        ct = cpabe_encrypt(self.pk, policy, message)
+        with self.assertRaises(Exception):
+            cpabe_decrypt(sk, ct)
+
+    def test_performance_benchmark(self):
+        """Benchmark encryption/decryption performance with large data"""
+        large_message = b"X" * 1000000  # 1MB of data
+        attributes = ["role::admin", "department::engineering"]
+        sk = cpabe_keygen(self.mk, attributes)
+        policy = '(role::admin AND department::engineering)'
+        
+        # Measure encryption time
+        start_time = time.time()
+        ct = cpabe_encrypt(self.pk, policy, large_message)
+        encryption_time = time.time() - start_time
+        
+        # Measure decryption time
+        start_time = time.time()
+        decrypted = cpabe_decrypt(sk, ct)
+        decryption_time = time.time() - start_time
+        
+        print(f"\nPerformance Benchmark Results:")
+        print(f"Encryption time for 1MB: {encryption_time:.2f} seconds")
+        print(f"Decryption time for 1MB: {decryption_time:.2f} seconds")
+        
+        self.assertEqual(large_message, decrypted)
+
+if __name__ == '__main__':
+    unittest.main()
